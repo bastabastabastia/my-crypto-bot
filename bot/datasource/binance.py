@@ -79,24 +79,32 @@ def fetch_klines(
         time.sleep(0.1)
 
 
-def download_market(market_alias: str, interval: str, days: int) -> int:
+def download_market(
+    market_alias: str, interval: str, days: int, verbose: bool = True
+) -> int:
     """Télécharge un marché et l'insère dans SQLite. Renvoie le nb de lignes insérées."""
     if market_alias not in MARKETS:
         raise ValueError(f"Marché inconnu : {market_alias} (connus : {list(MARKETS)})")
     symbol = MARKETS[market_alias]
     init_db()
     n_inserted = 0
+    n_fetched = 0
     rows: list[tuple] = []
     for kline in fetch_klines(symbol, interval, days):
         rows.append(
             (market_alias, interval, kline[0], kline[1], kline[2], kline[3],
              kline[4], kline[5], kline[6])
         )
+        n_fetched += 1
         if len(rows) >= 500:
             n_inserted += _insert_rows(rows)
             rows.clear()
+            if verbose:
+                print(f" {n_fetched}", end="", flush=True)
     if rows:
         n_inserted += _insert_rows(rows)
+    if verbose:
+        print(f" → {n_fetched} reçues, {n_inserted} nouvelles", flush=True)
     return n_inserted
 
 

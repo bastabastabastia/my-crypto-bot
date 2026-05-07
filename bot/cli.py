@@ -23,11 +23,13 @@ def cmd_download_data(args: argparse.Namespace) -> int:
     interval = args.intervalle
     days = args.jours
     print(f"→ Téléchargement {marches} en {interval} sur {days} jours…")
+    print("  (le compteur affiche les bougies reçues au fur et à mesure)")
     for m in marches:
-        print(f"  · {m} ({MARKETS[m]}) … ", end="", flush=True)
-        n = download_market(m, interval, days)
+        print(f"  · {m} ({MARKETS[m]}) …", end="", flush=True)
+        download_market(m, interval, days, verbose=True)
         last = latest_price(m, interval)
-        print(f"+{n} bougies. Dernière : {last['ts']} @ {last['close']:.2f}" if last else f"+{n}")
+        if last:
+            print(f"      Dernière bougie : {last['ts']} @ {last['close']:.2f}")
     return 0
 
 
