@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block head_extra %}{% endblock %}
+{% block content %}
+
+{% set c = "text-emerald-400" if run.pnl_pct >= 0 else "text-rose-400" %}
+
+<a class="text-sm text-sky-400 hover:underline" href="{{ url_for('backtest_index') }}">← Tous les runs</a>
+
+<section class="rounded-xl bg-slate-900 border border-slate-800 p-5">
+  <h2 class="text-xl font-semibold mb-1">Run #{{ run.id }} — {{ run.strategy }}</h2>
+  <p class="text-sm text-slate-400">
+    {{ run.marches|join(", ") }} · {{ run.intervalle }} ·
+    {{ run.debut[:16] }} → {{ run.fin[:16] }}
+  </p>
+  <p class="text-xs text-slate-500 mt-1">params : <code>{{ run.params_json or "{}" }}</code></p>
+</section>
+
+<section class="grid grid-cols-2 md:grid-cols-4 gap-4">
+  <div class="rounded-xl bg-slate-900 border border-slate-800 p-4">
+    <p class="text-slate-400 text-xs">P&amp;L</p>
+    <p class="text-2xl font-semibold {{ c }}">{{ "%+.2f"|format(run.pnl_pct) }} %</p>
+    <p class="text-xs text-slate-500">{{ "%.2f"|format(run.capital_initial) }} → {{ "%.2f"|format(run.capital_final) }} $</p>
+  </div>
+  <div class="rounded-xl bg-slate-900 border border-slate-800 p-4">
+    <p class="text-slate-400 text-xs">Sharpe / Sortino</p>
+    <p class="text-2xl font-semibold">{{ "%.2f"|format(run.sharpe or 0) }} <span class="text-slate-500 text-base">/ {{ "%.2f"|format(run.sortino or 0) }}</span></p>
+  </div>
+  <div class="rounded-xl bg-slate-900 border border-slate-800 p-4">
+    <p class="text-slate-400 text-xs">Max drawdown</p>
+    <p class="text-2xl font-semibold text-rose-300">{{ "%.2f"|format((run.max_drawdown or 0)*100) }} %</p>
+  </div>
+  <div class="rounded-xl bg-slate-900 border border-slate-800 p-4">
+    <p class="text-slate-400 text-xs">Trades · Win rate</p>
+    <p class="text-2xl font-semibold">{{ run.nb_trades }} <span class="text-slate-500 text-base">/ {{ "%.1f"|format((run.win_rate or 0)*100) }} %</span></p>
+  </div>
+</section>
+
+<section class="rounded-xl bg-slate-900 border border-slate-800 p-5">
+  <h3 class="text-lg font-semibold mb-3">📈 Equity curve</h3>
+  <div class="h-72"><canvas id="equityChart"></canvas></div>
+</section>
+
+<section class="rounded-xl bg-slate-900 border border-slate-800 p-5">
+  <h3 class="text-lg font-semibold mb-3">🔁 Trades (200 premiers)</h3>
+  {% if trades %}
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="text-slate-400 text-left">
+        <tr><th class="py-2">Date</th><th>Action</th><th>Marché</th><th>Qté</th><th>Prix</th><th>Frais</th><th class="text-right">P&amp;L</th><th>Raison</th></tr>
+      </thead>
+      <tbody class="divide-y divide-slate-800">
+        {% for t in trades %}
+        {% set tc = "text-emerald-400" if t.action == "ACHAT" else "text-rose-400" %}
+        {% set pc = "text-emerald-400" if (t.pnl or 0) >= 0 else "text-rose-400" %}
+        <tr>
+          <td class="py-2 text-slate-400 text-xs">{{ (t.ts // 1000) | int }}</td>
+          <td class="font-semibold {{ tc }}">{{ t.action }}</td>
+          <td>{{ t.marche }}</td>
+          <td>{{ "%.6f"|format(t.quantite) }}</td>
+          <td>{{ "%.2f"|format(t.prix) }}</td>
+          <td class="text-slate-500">{{ "%.2f"|format(t.frais) }}</td>
+          <td class="text-right {{ pc }}">{% if t.pnl is not none %}{{ "%+.2f"|format(t.pnl) }}{% else %}—{% endif %}</td>
+          <td class="text-slate-500 text-xs truncate max-w-md">{{ t.raison }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-slate-500 text-sm">Aucun trade.</p>
+  {% endif %}
+</section>
+
+<script>
+fetch("{{ url_for('api_backtest_equity', run_id=run.id) }}")
+  .then(r => r.json())
+  .then(rows => {
+    const ctx = document.getElementById('equityChart');
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: rows.map(p => new Date(p.ts).toISOString().slice(0,16)),
+        datasets: [{
+          label: 'Equity ($)',
+          data: rows.map(p => p.equity),
+          borderColor: 'rgb(52, 211, 153)',
+          backgroundColor: 'rgba(52, 211, 153, 0.12)',
+          fill: true,
+          tension: 0.15,
+          pointRadius: 0,
+        }, {
+          label: 'Cash ($)',
+          data: rows.map(p => p.cash),
+          borderColor: 'rgb(148, 163, 184)',
+          borderDash: [4, 4],
+          fill: false,
+          pointRadius: 0,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { ticks: { color: '#94a3b8', maxTicksLimit: 8 }, grid: { color: 'rgba(148,163,184,0.1)' } },
+          y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,0.1)' } }
+        },
+        plugins: { legend: { labels: { color: '#cbd5e1' } } }
+      }
+    });
+  });
+</script>
+
+{% endblock %}

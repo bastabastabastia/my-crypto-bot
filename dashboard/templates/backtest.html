@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block head_extra %}{% endblock %}
+{% block content %}
+
+<section class="rounded-xl bg-slate-900 border border-slate-800 p-5">
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-lg font-semibold">📈 Runs de backtest</h2>
+    <div class="text-xs text-slate-400">
+      Lance un backtest : <code class="bg-slate-800 px-2 py-1 rounded">python -m bot.cli backtest --strategy rsi_baseline</code>
+    </div>
+  </div>
+
+  {% if runs %}
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="text-slate-400 text-left">
+        <tr>
+          <th class="py-2">#</th>
+          <th>Stratégie</th>
+          <th>Marchés</th>
+          <th>Période</th>
+          <th class="text-right">P&amp;L %</th>
+          <th class="text-right">Sharpe</th>
+          <th class="text-right">Sortino</th>
+          <th class="text-right">MDD %</th>
+          <th class="text-right">Win %</th>
+          <th class="text-right">Trades</th>
+          <th class="text-right">CAGR %</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-800">
+        {% for r in runs %}
+        {% set c = "text-emerald-400" if r.pnl_pct >= 0 else "text-rose-400" %}
+        <tr class="hover:bg-slate-800/40">
+          <td class="py-2"><a class="text-sky-400 hover:underline" href="{{ url_for('backtest_detail', run_id=r.id) }}">#{{ r.id }}</a></td>
+          <td class="font-medium">{{ r.strategy }}</td>
+          <td>{{ r.marches|join(", ") }}</td>
+          <td class="text-slate-500 text-xs">{{ r.debut[:10] }} → {{ r.fin[:10] }}</td>
+          <td class="text-right {{ c }}">{{ "%+.2f"|format(r.pnl_pct) }}</td>
+          <td class="text-right">{{ "%.2f"|format(r.sharpe or 0) }}</td>
+          <td class="text-right">{{ "%.2f"|format(r.sortino or 0) }}</td>
+          <td class="text-right text-rose-300">{{ "%.2f"|format((r.max_drawdown or 0)*100) }}</td>
+          <td class="text-right">{{ "%.1f"|format((r.win_rate or 0)*100) }}</td>
+          <td class="text-right">{{ r.nb_trades }}</td>
+          <td class="text-right">{{ "%.2f"|format((r.cagr or 0)*100) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-slate-500 text-sm">Aucun backtest enregistré.</p>
+  <pre class="text-xs text-slate-400 bg-slate-950 p-4 mt-3 rounded">
+# Télécharge les données puis lance un backtest :
+pip install -r bot/requirements.txt
+python -m bot.cli download-data --jours 365
+python -m bot.cli backtest --strategy rsi_baseline
+  </pre>
+  {% endif %}
+</section>
+
+{% endblock %}

@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import sqlite3
 from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
@@ -19,6 +20,13 @@ CRYPTO_LOG = DATA_DIR / "crypto.log"
 
 DASHBOARD_USER = os.environ.get("DASHBOARD_USER", "admin")
 DASHBOARD_PASSWORD = os.environ.get("DASHBOARD_PASSWORD", "change-me")
+
+BOT_DB_PATH = Path(
+    os.environ.get(
+        "BOT_DB_PATH",
+        Path(__file__).parent.parent / "bot" / "data" / "bot.sqlite3",
+    )
+)
 
 
 def check_auth(username: str, password: str) -> bool:
@@ -258,6 +266,64 @@ def api_snapshot():
             "status": system_status(),
         }
     )
+
+
+def _bot_db_query(sql: str, params: tuple = ()) -> list[dict]:
+    if not BOT_DB_PATH.exists():
+        return []
+    conn = sqlite3.connect(BOT_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        return [dict(r) for r in conn.execute(sql, params).fetchall()]
+    finally:
+        conn.close()
+
+
+@app.route("/backtest")
+@requires_auth
+def backtest_index():
+    runs = _bot_db_query(
+        """SELECT id, started_at, strategy, marches_json, intervalle, debut, fin,
+                  capital_initial, capital_final, pnl_pct, sharpe, sortino,
+                  max_drawdown, win_rate, nb_trades, cagr
+           FROM backtest_runs ORDER BY id DESC LIMIT 50"""
+    )
+    for r in runs:
+        try:
+            r["marches"] = json.loads(r["marches_json"])
+        except (json.JSONDecodeError, TypeError):
+            r["marches"] = []
+    return render_template("backtest.html", runs=runs, status=system_status())
+
+
+@app.route("/backtest/<int:run_id>")
+@requires_auth
+def backtest_detail(run_id: int):
+    runs = _bot_db_query("SELECT * FROM backtest_runs WHERE id=?", (run_id,))
+    if not runs:
+        return f"Run #{run_id} introuvable", 404
+    run = runs[0]
+    try:
+        run["marches"] = json.loads(run["marches_json"])
+        run["params"] = json.loads(run["params_json"] or "{}")
+    except json.JSONDecodeError:
+        run["marches"], run["params"] = [], {}
+
+    trades = _bot_db_query(
+        "SELECT * FROM backtest_trades WHERE run_id=? ORDER BY ts LIMIT 200",
+        (run_id,),
+    )
+    return render_template("backtest_detail.html", run=run, trades=trades, status=system_status())
+
+
+@app.route("/api/backtest/<int:run_id>/equity")
+@requires_auth
+def api_backtest_equity(run_id: int):
+    rows = _bot_db_query(
+        "SELECT ts, equity, cash FROM backtest_equity WHERE run_id=? ORDER BY ts",
+        (run_id,),
+    )
+    return jsonify(rows)
 
 
 @app.route("/healthz")
