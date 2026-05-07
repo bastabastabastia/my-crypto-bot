@@ -64,10 +64,30 @@ bot/
 Variables d'environnement disponibles : `BOT_FRAIS_PCT`, `BOT_SLIPPAGE_PCT`,
 `BOT_CAPITAL`, `BOT_CAPITAL_PAR_MARCHE`.
 
+## Stratégies disponibles
+
+| Nom | Description |
+|-----|-------------|
+| `rsi_baseline` | RSI 14 (Wilder), achat < 30 / vente > 70. Référence simple. |
+| `hybride_prudente` | **Reproduction fidèle de la prod** (`/root/strategie.py`). RSI SMA 14 < 35 + prix > MM50 pour acheter ; stop-loss -3 %, take-profit RSI ≥ 70, durée max 4 h. Achat fixe 200 $. |
+
+Pour comparer prod vs baseline sur les mêmes données :
+
+```bash
+python -m bot.cli download-data --jours 365
+python -m bot.cli backtest --strategy hybride_prudente --capital 1000
+python -m bot.cli backtest --strategy rsi_baseline --capital 1000
+python -m bot.cli list-runs
+```
+
+Le résultat apparaît aussi dans le dashboard onglet **Backtest**.
+
 ## Ajouter une stratégie
 
 1. Crée `bot/strategies/ma_strategie.py` qui hérite de `Strategy` et implémente
-   `decide(df, position_ouverte) -> Signal`.
+   `decide(ctx: StrategyContext) -> Signal`.
+   Le `ctx` contient : df OHLCV, ts courant, position (qty/prix/ts d'achat),
+   cash global, nb positions ouvertes.
 2. Ajoute-la au registre dans `bot/strategies/__init__.py`.
 3. Lance : `python -m bot.cli backtest --strategy ma_strategie`.
 

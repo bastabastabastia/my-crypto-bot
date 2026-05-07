@@ -18,11 +18,24 @@ def ema(series: pd.Series, window: int) -> pd.Series:
 
 
 def rsi(series: pd.Series, window: int = 14) -> pd.Series:
+    """RSI Wilder (lissage exponentiel) — standard académique."""
     delta = series.diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
     avg_gain = gain.ewm(alpha=1 / window, adjust=False).mean()
     avg_loss = loss.ewm(alpha=1 / window, adjust=False).mean()
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    return 100 - (100 / (1 + rs))
+
+
+def rsi_sma(series: pd.Series, window: int = 14) -> pd.Series:
+    """RSI version moyenne mobile simple — reproduction exacte de la prod
+    (crypto_indicateurs.calculer_rsi)."""
+    delta = series.diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    avg_gain = gain.rolling(window=window).mean()
+    avg_loss = loss.rolling(window=window).mean()
     rs = avg_gain / avg_loss.replace(0, np.nan)
     return 100 - (100 / (1 + rs))
 

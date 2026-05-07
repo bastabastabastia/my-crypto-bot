@@ -13,29 +13,42 @@ import pandas as pd
 class Signal:
     action: Literal["BUY", "SELL", "HOLD"]
     raison: str = ""
-    # taille demandée en fraction du capital alloué au marché [0, 1]
-    taille: float = 1.0
+    # Montant USD demandé pour un BUY. None = utiliser plafond_position du moteur.
+    montant_usd: float | None = None
     contexte: dict = field(default_factory=dict)
 
 
-class Strategy(ABC):
-    """Stratégie sans état partagé entre marchés.
+@dataclass
+class StrategyContext:
+    """Contexte passé à la stratégie pour décider.
 
-    Le moteur appelle decide() pour chaque bougie en passant l'historique
-    OHLCV jusqu'à la bougie courante (incluse). La stratégie retourne un
-    Signal (BUY / SELL / HOLD).
+    Plus riche que juste un bool : nécessaire pour les stratégies qui
+    regardent le cash global, le nb de positions, ou la durée de détention.
     """
+    df: pd.DataFrame                 # OHLCV jusqu'à la bougie courante (incluse)
+    ts_courant_ms: int               # timestamp ms de la bougie courante
+    marche: str                      # ex "BTC"
+    position_quantite: float = 0.0   # 0 = pas de position
+    position_prix_achat: float = 0.0
+    position_ts_achat_ms: int = 0
+    cash_global: float = 0.0         # cash partagé entre marchés
+    nb_positions_ouvertes: int = 0   # toutes positions ouvertes (autres marchés inclus)
 
+    @property
+    def position_ouverte(self) -> bool:
+        return self.position_quantite > 0
+
+
+class Strategy(ABC):
     name: str = "base"
 
     def __init__(self, **params):
         self.params = params
 
     @abstractmethod
-    def decide(self, df: pd.DataFrame, position_ouverte: bool) -> Signal:
-        """Retourne un signal pour la bougie courante (df.iloc[-1])."""
+    def decide(self, ctx: StrategyContext) -> Signal:
         ...
 
     def warmup(self) -> int:
-        """Nombre minimum de bougies nécessaires avant de pouvoir décider."""
+        """Nb min de bougies avant de pouvoir décider."""
         return 50

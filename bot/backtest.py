@@ -23,7 +23,7 @@ from .config import (
 )
 from .db import connect, init_db
 from .metrics import summary
-from .strategies.base import Strategy
+from .strategies.base import Strategy, StrategyContext
 
 
 @dataclass
@@ -44,6 +44,7 @@ class Position:
     quantite: float = 0.0
     prix_entree: float = 0.0
     cout_entree: float = 0.0  # cash engagé à l'achat (incluant frais)
+    ts_entree_ms: int = 0     # timestamp d'ouverture (pour stratégies time-based)
 
     @property
     def ouverte(self) -> bool:
@@ -152,19 +153,31 @@ def run(
         if i < warmup:
             continue
 
+        ts_ms = int(ts.timestamp() * 1000)
+        nb_open = portfolio.nb_positions_ouvertes()
+
         for m in marches:
             df = data[m].loc[:ts]
             pos = portfolio.position(m)
-            signal = strategy.decide(df, pos.ouverte)
+            ctx = StrategyContext(
+                df=df,
+                ts_courant_ms=ts_ms,
+                marche=m,
+                position_quantite=pos.quantite,
+                position_prix_achat=pos.prix_entree,
+                position_ts_achat_ms=pos.ts_entree_ms,
+                cash_global=portfolio.cash,
+                nb_positions_ouvertes=nb_open,
+            )
+            signal = strategy.decide(ctx)
 
             prix_close = float(df.iloc[-1]["close"])
-            ts_ms = int(ts.timestamp() * 1000)
 
             if signal.action == "BUY" and not pos.ouverte and portfolio.cash > 0:
                 prix_exec = prix_close * (1 + slippage_pct)
-                # Taille demandée par la stratégie (fraction de plafond) ; bornée au cash dispo
-                cash_demande = plafond_position * max(0.0, min(1.0, signal.taille))
-                cash_a_engager = min(portfolio.cash, cash_demande)
+                # Montant demandé par la stratégie ; default = plafond_position
+                cash_demande = signal.montant_usd if signal.montant_usd is not None else plafond_position
+                cash_a_engager = min(portfolio.cash, max(0.0, cash_demande))
                 if cash_a_engager <= 0:
                     continue
                 frais = cash_a_engager * frais_pct
@@ -173,12 +186,14 @@ def run(
                 pos.quantite = qty
                 pos.prix_entree = prix_exec
                 pos.cout_entree = cash_a_engager
+                pos.ts_entree_ms = ts_ms
                 portfolio.cash -= cash_a_engager
                 trades.append(TradeRecord(
                     ts=ts_ms, marche=m, action="ACHAT",
                     quantite=qty, prix=prix_exec, frais=frais, pnl=None,
                     raison=signal.raison,
                 ))
+                nb_open += 1  # le suivant verra la nouvelle position
             elif signal.action == "SELL" and pos.ouverte:
                 prix_exec = prix_close * (1 - slippage_pct)
                 montant_brut = pos.quantite * prix_exec
@@ -194,6 +209,8 @@ def run(
                 pos.quantite = 0.0
                 pos.prix_entree = 0.0
                 pos.cout_entree = 0.0
+                pos.ts_entree_ms = 0
+                nb_open -= 1
 
         # Snapshot equity (cash global + valeur des positions au close)
         equity = portfolio.cash + sum(
