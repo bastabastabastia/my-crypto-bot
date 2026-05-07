@@ -1,19 +1,25 @@
 {
   "capital_initial": 3000,
-  "cash": 1547.32,
-  "updated_at": "2026-05-07T18:00:00Z",
+  "cash": 1247.32,
+  "updated_at": "2026-05-07T22:00:00Z",
   "positions": [
     {
-      "marche": "BTC/USD",
+      "marche": "BTC/USDT",
       "quantite": 0.012,
       "prix_achat": 64000,
       "prix_actuel": 67250
     },
     {
-      "marche": "ETH/USD",
+      "marche": "ETH/USDT",
       "quantite": 0.45,
       "prix_achat": 3100,
       "prix_actuel": 3245
+    },
+    {
+      "marche": "SOL/USDT",
+      "quantite": 4.2,
+      "prix_achat": 152.0,
+      "prix_actuel": 168.5
     }
   ]
 }

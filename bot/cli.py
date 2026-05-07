@@ -7,6 +7,7 @@ import json
 import sys
 
 from .config import (
+    CAPITAL_INITIAL,
     CAPITAL_PAR_MARCHE,
     DEFAULT_HISTORY_DAYS,
     DEFAULT_INTERVAL,
@@ -54,7 +55,8 @@ def cmd_backtest(args: argparse.Namespace) -> int:
         strategy=strategy,
         marches=marches,
         intervalle=args.intervalle,
-        capital_par_marche=args.capital_par_marche,
+        capital_initial=args.capital,
+        capital_par_marche=args.plafond_position,
     )
     print(f"\n=== Run #{result.run_id} ===")
     print(f"Période       : {result.debut} → {result.fin}")
@@ -134,7 +136,10 @@ def main(argv: list[str] | None = None) -> int:
     p_bt.add_argument("--params", help='JSON, ex: \'{"window":21}\'')
     p_bt.add_argument("--marches", nargs="*", choices=list(MARKETS.keys()))
     p_bt.add_argument("--intervalle", default=DEFAULT_INTERVAL)
-    p_bt.add_argument("--capital-par-marche", type=float, default=CAPITAL_PAR_MARCHE)
+    p_bt.add_argument("--capital", type=float, default=CAPITAL_INITIAL,
+                      help="Capital initial GLOBAL (cash partagé entre marchés)")
+    p_bt.add_argument("--plafond-position", type=float, default=None,
+                      help="Taille max d'une position (par défaut : capital / nb_marchés)")
     p_bt.set_defaults(func=cmd_backtest)
 
     p_list = sub.add_parser("list-runs", help="Lister les runs précédents")

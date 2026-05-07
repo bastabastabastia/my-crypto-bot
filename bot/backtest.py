@@ -16,7 +16,6 @@ from datetime import datetime, timezone
 import pandas as pd
 
 from .config import (
-    CAPITAL_PAR_MARCHE,
     DEFAULT_HISTORY_DAYS,
     DEFAULT_INTERVAL,
     FRAIS_PCT,
@@ -40,16 +39,31 @@ class TradeRecord:
 
 
 @dataclass
-class MarketState:
+class Position:
     marche: str
-    cash: float
     quantite: float = 0.0
     prix_entree: float = 0.0
-    cout_entree: float = 0.0  # cash dépensé à l'achat (incluant frais)
+    cout_entree: float = 0.0  # cash engagé à l'achat (incluant frais)
 
     @property
-    def position_ouverte(self) -> bool:
+    def ouverte(self) -> bool:
         return self.quantite > 0
+
+
+@dataclass
+class Portfolio:
+    """Cash global commun à tous les marchés (modèle prod paper_trading.py)."""
+    cash: float
+    capital_initial: float
+    positions: dict[str, Position] = field(default_factory=dict)
+
+    def position(self, marche: str) -> Position:
+        if marche not in self.positions:
+            self.positions[marche] = Position(marche=marche)
+        return self.positions[marche]
+
+    def nb_positions_ouvertes(self) -> int:
+        return sum(1 for p in self.positions.values() if p.ouverte)
 
 
 @dataclass
@@ -89,15 +103,29 @@ def run(
     strategy: Strategy,
     marches: list[str],
     intervalle: str = DEFAULT_INTERVAL,
-    capital_par_marche: float = CAPITAL_PAR_MARCHE,
+    capital_initial: float | None = None,
+    capital_par_marche: float | None = None,  # taille max par position si pas fournie par signal.taille
     frais_pct: float = FRAIS_PCT,
     slippage_pct: float = SLIPPAGE_PCT,
 ) -> BacktestResult:
-    """Execute le backtest et persiste le résultat dans SQLite."""
+    """Execute le backtest avec cash GLOBAL et persiste le résultat.
+
+    - capital_initial : si fourni, montant unique partagé. Sinon = CAPITAL_INITIAL.
+    - capital_par_marche : si fourni, plafond max par position (sinon = capital_initial / nb_marchés).
+    """
+    from .config import CAPITAL_INITIAL
+
     init_db()
     started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
-    # Charger les données et aligner les index sur l'union
+    capital_initial = capital_initial if capital_initial is not None else CAPITAL_INITIAL
+    plafond_position = (
+        capital_par_marche
+        if capital_par_marche is not None
+        else capital_initial / max(1, len(marches))
+    )
+
+    # Charger les données
     data: dict[str, pd.DataFrame] = {}
     for m in marches:
         df = load_prix(m, intervalle)
@@ -108,17 +136,16 @@ def run(
             )
         data[m] = df
 
-    # Index commun (intersection : on traite seulement les bougies présentes
-    # pour tous les marchés afin de garder l'equity curve cohérente)
+    # Index commun
     common_index = None
     for df in data.values():
         common_index = df.index if common_index is None else common_index.intersection(df.index)
     if common_index is None or len(common_index) == 0:
         raise RuntimeError("Index commun vide entre les marchés.")
 
-    states = {m: MarketState(m, cash=capital_par_marche) for m in marches}
+    portfolio = Portfolio(cash=capital_initial, capital_initial=capital_initial)
     trades: list[TradeRecord] = []
-    equity_history: list[tuple[int, float, float]] = []  # (ts_ms, equity, cash_total)
+    equity_history: list[tuple[int, float, float]] = []  # (ts_ms, equity, cash)
 
     warmup = strategy.warmup()
     for i, ts in enumerate(common_index):
@@ -127,52 +154,54 @@ def run(
 
         for m in marches:
             df = data[m].loc[:ts]
-            state = states[m]
-            signal = strategy.decide(df, state.position_ouverte)
+            pos = portfolio.position(m)
+            signal = strategy.decide(df, pos.ouverte)
 
             prix_close = float(df.iloc[-1]["close"])
             ts_ms = int(ts.timestamp() * 1000)
 
-            if signal.action == "BUY" and not state.position_ouverte and state.cash > 0:
+            if signal.action == "BUY" and not pos.ouverte and portfolio.cash > 0:
                 prix_exec = prix_close * (1 + slippage_pct)
-                cash_a_engager = min(state.cash, state.cash * max(0.0, min(1.0, signal.taille)))
+                # Taille demandée par la stratégie (fraction de plafond) ; bornée au cash dispo
+                cash_demande = plafond_position * max(0.0, min(1.0, signal.taille))
+                cash_a_engager = min(portfolio.cash, cash_demande)
                 if cash_a_engager <= 0:
                     continue
                 frais = cash_a_engager * frais_pct
                 montant_net = cash_a_engager - frais
                 qty = montant_net / prix_exec
-                state.quantite = qty
-                state.prix_entree = prix_exec
-                state.cout_entree = cash_a_engager
-                state.cash -= cash_a_engager
+                pos.quantite = qty
+                pos.prix_entree = prix_exec
+                pos.cout_entree = cash_a_engager
+                portfolio.cash -= cash_a_engager
                 trades.append(TradeRecord(
                     ts=ts_ms, marche=m, action="ACHAT",
                     quantite=qty, prix=prix_exec, frais=frais, pnl=None,
                     raison=signal.raison,
                 ))
-            elif signal.action == "SELL" and state.position_ouverte:
+            elif signal.action == "SELL" and pos.ouverte:
                 prix_exec = prix_close * (1 - slippage_pct)
-                montant_brut = state.quantite * prix_exec
+                montant_brut = pos.quantite * prix_exec
                 frais = montant_brut * frais_pct
                 montant_net = montant_brut - frais
-                pnl = montant_net - state.cout_entree
-                state.cash += montant_net
+                pnl = montant_net - pos.cout_entree
+                portfolio.cash += montant_net
                 trades.append(TradeRecord(
                     ts=ts_ms, marche=m, action="VENTE",
-                    quantite=state.quantite, prix=prix_exec, frais=frais, pnl=pnl,
+                    quantite=pos.quantite, prix=prix_exec, frais=frais, pnl=pnl,
                     raison=signal.raison,
                 ))
-                state.quantite = 0.0
-                state.prix_entree = 0.0
-                state.cout_entree = 0.0
+                pos.quantite = 0.0
+                pos.prix_entree = 0.0
+                pos.cout_entree = 0.0
 
-        # Snapshot equity total
-        equity = sum(
-            s.cash + s.quantite * float(data[s.marche].loc[ts]["close"])
-            for s in states.values()
+        # Snapshot equity (cash global + valeur des positions au close)
+        equity = portfolio.cash + sum(
+            p.quantite * float(data[p.marche].loc[ts]["close"])
+            for p in portfolio.positions.values()
+            if p.ouverte
         )
-        cash_total = sum(s.cash for s in states.values())
-        equity_history.append((int(ts.timestamp() * 1000), equity, cash_total))
+        equity_history.append((int(ts.timestamp() * 1000), equity, portfolio.cash))
 
     # Construit les séries
     if not equity_history:
@@ -182,7 +211,6 @@ def run(
     eq_df = eq_df.set_index("ts")
     equity_curve = eq_df["equity"]
 
-    capital_initial = capital_par_marche * len(marches)
     capital_final = float(equity_curve.iloc[-1])
     pnl_pct = (capital_final / capital_initial - 1.0) * 100
 
