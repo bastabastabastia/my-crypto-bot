@@ -36,9 +36,26 @@ crypto-agent/
 │   ├── connect.sh         # Se connecter au serveur
 │   ├── status.sh          # Voir l'état rapide du système
 │   └── logs.sh            # Voir les logs récents
-└── notes/
-    └── journal.md         # Journal de bord (à remplir)
+├── notes/
+│   └── journal.md         # Journal de bord (à remplir)
+└── dashboard/             # Dashboard web Flask (déployable sur le serveur)
+    ├── app.py
+    ├── templates/
+    ├── deploy/deploy.sh
+    └── README.md
 ```
+
+## 📊 Dashboard
+
+Voir `dashboard/README.md`. Lancer en local :
+
+```bash
+cd dashboard && pip install -r requirements.txt
+DASHBOARD_PASSWORD=monpass python3 app.py
+# http://127.0.0.1:5000  (admin / monpass)
+```
+
+Déployer sur le serveur : `./dashboard/deploy/deploy.sh`
 
 ## 🚀 Démarrage rapide
 

@@ -1,0 +1,19 @@
+{
+  "capital_initial": 3000,
+  "cash": 1547.32,
+  "updated_at": "2026-05-07T18:00:00Z",
+  "positions": [
+    {
+      "marche": "BTC/USD",
+      "quantite": 0.012,
+      "prix_achat": 64000,
+      "prix_actuel": 67250
+    },
+    {
+      "marche": "ETH/USD",
+      "quantite": 0.45,
+      "prix_achat": 3100,
+      "prix_actuel": 3245
+    }
+  ]
+}

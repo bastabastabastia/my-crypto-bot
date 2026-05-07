@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% set pnl_color = "text-emerald-400" if snapshot.pnl >= 0 else "text-rose-400" %}
+{% set pnl_sign = "+" if snapshot.pnl >= 0 else "" %}
+
+<section class="grid grid-cols-2 md:grid-cols-4 gap-4">
+  <div class="rounded-xl bg-slate-900 border border-slate-800 p-5">
+    <p class="text-slate-400 text-sm">Valeur totale</p>
+    <p class="text-2xl font-semibold mt-1">{{ "%.2f"|format(snapshot.valeur_totale) }} $</p>
+    <p class="text-xs text-slate-500 mt-1">Capital initial : {{ "%.0f"|format(snapshot.capital_initial) }} $</p>
+  </div>
+  <div class="rounded-xl bg-slate-900 border border-slate-800 p-5">
+    <p class="text-slate-400 text-sm">P&amp;L global</p>
+    <p class="text-2xl font-semibold mt-1 {{ pnl_color }}">
+      {{ pnl_sign }}{{ "%.2f"|format(snapshot.pnl) }} $
+    </p>
+    <p class="text-xs {{ pnl_color }} mt-1">{{ pnl_sign }}{{ "%.2f"|format(snapshot.pnl_pct) }} %</p>
+  </div>
+  <div class="rounded-xl bg-slate-900 border border-slate-800 p-5">
+    <p class="text-slate-400 text-sm">Cash disponible</p>
+    <p class="text-2xl font-semibold mt-1">{{ "%.2f"|format(snapshot.cash) }} $</p>
+    <p class="text-xs text-slate-500 mt-1">{{ "%.2f"|format(snapshot.valeur_positions or 0) }} $ en positions</p>
+  </div>
+  <div class="rounded-xl bg-slate-900 border border-slate-800 p-5">
+    <p class="text-slate-400 text-sm">Positions ouvertes</p>
+    <p class="text-2xl font-semibold mt-1">{{ snapshot.positions|length }}</p>
+    <p class="text-xs text-slate-500 mt-1">MàJ portefeuille : {{ snapshot.updated_at or "—" }}</p>
+  </div>
+</section>
+
+<section class="rounded-xl bg-slate-900 border border-slate-800 p-5">
+  <h2 class="text-lg font-semibold mb-4">📈 Évolution de la valeur totale</h2>
+  <div class="h-64"><canvas id="historyChart"></canvas></div>
+</section>
+
+<section class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  <div class="rounded-xl bg-slate-900 border border-slate-800 p-5">
+    <h2 class="text-lg font-semibold mb-4">💼 Positions ouvertes</h2>
+    {% if snapshot.positions %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="text-slate-400 text-left">
+          <tr>
+            <th class="py-2">Marché</th>
+            <th>Qté</th>
+            <th>Achat</th>
+            <th>Actuel</th>
+            <th>Valeur</th>
+            <th class="text-right">P&amp;L</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-800">
+          {% for p in snapshot.positions %}
+          {% set c = "text-emerald-400" if p.pnl >= 0 else "text-rose-400" %}
+          <tr>
+            <td class="py-2 font-medium">{{ p.marche }}</td>
+            <td>{{ "%.4f"|format(p.quantite) }}</td>
+            <td>{{ "%.2f"|format(p.prix_achat) }}</td>
+            <td>{{ "%.2f"|format(p.prix_actuel) }}</td>
+            <td>{{ "%.2f"|format(p.valeur) }} $</td>
+            <td class="text-right {{ c }}">{{ "%.2f"|format(p.pnl) }} $ ({{ "%.2f"|format(p.pnl_pct) }} %)</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-slate-500 text-sm">Aucune position ouverte.</p>
+    {% endif %}
+  </div>
+
+  <div class="rounded-xl bg-slate-900 border border-slate-800 p-5">
+    <h2 class="text-lg font-semibold mb-4">🔔 Alertes récentes</h2>
+    {% if alerts %}
+    <ul class="space-y-2 text-sm max-h-80 overflow-y-auto">
+      {% for a in alerts %}
+      <li class="border-l-2 border-amber-500/60 pl-3">
+        <p class="text-slate-400 text-xs">{{ a.ts }}</p>
+        <p>{{ a.message }}</p>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-slate-500 text-sm">Aucune alerte trouvée dans crypto.log.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="rounded-xl bg-slate-900 border border-slate-800 p-5">
+  <h2 class="text-lg font-semibold mb-4">🔁 Derniers trades</h2>
+  {% if trades %}
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="text-slate-400 text-left">
+        <tr>
+          <th class="py-2">Horodatage</th>
+          <th>Action</th>
+          <th>Marché</th>
+          <th>Quantité</th>
+          <th>Prix</th>
+          <th>Ligne brute</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-800">
+        {% for t in trades %}
+        {% set c = "text-emerald-400" if t.action == "ACHAT" else "text-rose-400" %}
+        <tr>
+          <td class="py-2 text-slate-400">{{ t.ts }}</td>
+          <td class="font-semibold {{ c }}">{{ t.action }}</td>
+          <td>{{ t.marche }}</td>
+          <td>{{ t.quantite }}</td>
+          <td>{{ t.prix }}</td>
+          <td class="text-slate-500 truncate max-w-md">{{ t.raw }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-slate-500 text-sm">Aucun trade détecté dans paper.log.</p>
+  {% endif %}
+</section>
+
+<section class="rounded-xl bg-slate-900 border border-slate-800 p-5">
+  <h2 class="text-lg font-semibold mb-4">⚙️ État système</h2>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+    {% for name, info in [("portefeuille.json", status.portefeuille), ("paper.log", status.paper_log), ("crypto.log", status.crypto_log), ("historique", status.history)] %}
+    <div>
+      <p class="text-slate-400">{{ name }}</p>
+      {% if info.exists %}
+      <p class="font-medium">{{ info.size_kb }} Ko</p>
+      <p class="text-xs text-slate-500">MàJ {{ info.mtime }}</p>
+      {% else %}
+      <p class="text-rose-400">absent</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<script>
+  fetch("{{ url_for('api_snapshot') }}")
+    .then(r => r.json())
+    .then(data => {
+      const ctx = document.getElementById('historyChart');
+      const points = data.history || [];
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: points.map(p => p.ts),
+          datasets: [{
+            label: 'Valeur totale ($)',
+            data: points.map(p => p.valeur_totale),
+            borderColor: 'rgb(52, 211, 153)',
+            backgroundColor: 'rgba(52, 211, 153, 0.15)',
+            fill: true,
+            tension: 0.25,
+            pointRadius: 0,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: { ticks: { color: '#94a3b8', maxTicksLimit: 8 }, grid: { color: 'rgba(148,163,184,0.1)' } },
+            y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,0.1)' } }
+          },
+          plugins: { legend: { labels: { color: '#cbd5e1' } } }
+        }
+      });
+    });
+</script>
+{% endblock %}

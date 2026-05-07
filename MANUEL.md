@@ -103,6 +103,26 @@ python3 crypto_alerte.py     # Cycle d'alertes
 
 ---
 
+## 📊 Dashboard web
+
+Une fois déployé via `dashboard/deploy/deploy.sh` :
+
+- URL : http://164.92.173.210:5000
+- Login : `admin` / mot de passe défini dans `/root/dashboard/.env`
+- Affiche : portefeuille, P&L, positions, derniers trades, alertes, graphique
+  d'évolution. Auto-refresh toutes les 30 s.
+
+Statut / logs du service :
+
+```bash
+systemctl status crypto-dashboard
+tail -f /root/dashboard.error.log
+```
+
+Voir `dashboard/README.md` pour les détails.
+
+---
+
 ## 🚪 Quitter le serveur
 
 ```bash

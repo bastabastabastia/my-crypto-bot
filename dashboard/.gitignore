@@ -1,0 +1,5 @@
+data/historique_portefeuille.jsonl
+__pycache__/
+*.pyc
+.venv/
+venv/
